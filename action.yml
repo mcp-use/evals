@@ -73,8 +73,7 @@ runs:
         INPUT_COMMENT: ${{ inputs.comment }}
         GH_TOKEN: ${{ inputs.github-token }}
         # Each release of this action pins the CLI it was tested with.
-        # TODO: pin the first @mcp-use/cli release with `evals run --json-file/--markdown-file`.
-        CLI_PACKAGE: "@mcp-use/cli@latest"
+        CLI_PACKAGE: "@mcp-use/cli@5.4.0"
         NO_COLOR: "1"
       # exec: the script replaces the step's shell, so a cancelled job signals it directly.
       run: 'exec "$GITHUB_ACTION_PATH/scripts/run.sh"'
