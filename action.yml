@@ -16,6 +16,10 @@ inputs:
     description: Suites to run, one per line. Each line is a suite ID, a suite name, or a path to a suite file or folder in the repository (the suite named in the file runs). Leave empty to run every enabled suite.
     required: false
     default: ""
+  profile:
+    description: ID of a profile of the server's organization to sign in with instead of the server's own, to run the suites as a different account. Not for native apps or clients running the plugin lifecycle, which sign in with the suite's test account.
+    required: false
+    default: ""
   timeout:
     description: Seconds to wait for the runs to finish. Runs that are still going keep running on Manufact Cloud.
     required: false
@@ -69,6 +73,7 @@ runs:
         MANUFACT_SERVER: ${{ inputs.server }}
         INPUT_SUITES: ${{ inputs.suites }}
         INPUT_TIMEOUT: ${{ inputs.timeout }}
+        INPUT_PROFILE: ${{ inputs.profile }}
         INPUT_FAIL_ON: ${{ inputs.fail-on }}
         INPUT_COMMENT: ${{ inputs.comment }}
         GH_TOKEN: ${{ inputs.github-token }}

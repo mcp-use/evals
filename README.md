@@ -79,6 +79,30 @@ Push the suite files before running them, so the suites on Manufact Cloud match 
 
 Push only from your default branch. A push replaces the suite on Manufact Cloud for everyone, so pushing from a pull request would change the suites before the change is reviewed.
 
+### Run as different accounts
+
+By default the suites sign in with the server's own profile. Set `profile` to sign in with another [profile](https://docs.manufact.com/dashboard/profiles) of the server's organization, for example to run the same suites as a free-tier and a paid-tier test user:
+
+```yaml
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        profile:
+          - 6f1c2a7e-0b5d-4e8a-9c3f-2d4b6a8e1f90 # free tier
+          - 0b8e4c21-7d3a-4f6e-a1c9-5e2f8d7b3a64 # paid tier
+    steps:
+      - uses: mcp-use/evals@v1
+        with:
+          token: ${{ secrets.MANUFACT_TOKEN }}
+          server: e3b0c442-98fc-4c14-9afb-f4c8996fb924
+          profile: ${{ matrix.profile }}
+```
+
+- Native apps, and chatgpt.com or claude.ai when the suite runs the plugin lifecycle, sign in with the suite's test account, so a profile can't apply to them. Manufact Cloud refuses the run and the step fails.
+- If Manufact Cloud doesn't apply the profile, the CLI cancels the run and the step fails, so results never come from the wrong account.
+
 ### Use the result in later steps
 
 ```yaml
@@ -108,6 +132,7 @@ https://manufact.com/cloud/<org>/servers/e3b0c442-98fc-4c14-9afb-f4c8996fb924/ov
 | `token` | | Required. Manufact API key, scoped to the server's organization. Store it as a secret. See [how to create an API key](https://docs.manufact.com/dashboard/api-keys). |
 | `server` | | Required. Server ID: the UUID in the server's dashboard URL. See [Find your server ID](#find-your-server-id). |
 | `suites` | every enabled suite | Suites to run, one per line: IDs, names, or paths to suite files or folders. |
+| `profile` | the server's own | ID of a profile of the server's organization to sign in with instead, to run the suites as a different account. Not for native apps or clients running the plugin lifecycle. |
 | `timeout` | `1800` | Seconds to wait for the runs. Runs still going at the timeout keep running on Manufact Cloud, and the step fails. |
 | `fail-on` | `failed` | `failed` fails the job when a suite fails, is cancelled or times out. `none` only fails it when the suites can't run at all (for example, a bad token). |
 | `comment` | `true` | On pull requests, comment the results. Set `false` to turn it off. |

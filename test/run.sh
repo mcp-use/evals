@@ -125,6 +125,17 @@ check "a failed start names the runs already going" credits pull_request \
   'grep -q "Already started, still running on Cloud: run_suite_rome (Rome weather)" gh.body' \
   '! grep -q "^passed=" output'
 
+check "a profile reaches every run" pass push INPUT_PROFILE=profile_free \
+  '[ "$CODE" = 0 ]' \
+  'grep -qx "passed=true" output' \
+  '[ "$(grep -c "^POST .*/runs?profileId=profile_free$" requests)" = 2 ]'
+
+check "a Cloud that ignores the profile fails the step" noprofile push INPUT_PROFILE=profile_free \
+  '[ "$CODE" = 1 ]' \
+  'grep -q "::error title=Manufact evals::.*did not apply --profile" stdout' \
+  'grep -q "POST .*/runs/run_suite_rome/cancel" requests' \
+  '! grep -q "^passed=" output'
+
 check "a bad token fails without runs" pass push MANUFACT_TOKEN=wrong \
   '[ "$CODE" = 1 ]' \
   'grep -q "::error title=Manufact evals::Unauthorized" stdout' \

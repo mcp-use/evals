@@ -68,7 +68,7 @@ function run(id, suiteId) {
 const requests = [];
 const http = createServer((req, res) => {
   const url = new URL(req.url, "http://localhost");
-  requests.push(`${req.method} ${url.pathname}`);
+  requests.push(`${req.method} ${url.pathname}${url.search}`);
   const send = (status, body) => {
     res.writeHead(status, { "content-type": "application/json" });
     res.end(JSON.stringify(body));
@@ -92,7 +92,15 @@ const http = createServer((req, res) => {
   if (req.method === "POST" && match && scenario === "credits" && match[1] === "suite_cart")
     return send(402, { error: "Out of eval credits", code: "INSUFFICIENT_CREDITS" });
   if (req.method === "POST" && match)
-    return send(201, { id: `run_${match[1]}`, suiteId: match[1], status: "running", pass: null, score: null });
+    // Echo the profile like Cloud does; the "noprofile" scenario is a Cloud that ignores it.
+    return send(201, {
+      id: `run_${match[1]}`,
+      suiteId: match[1],
+      status: "running",
+      pass: null,
+      score: null,
+      profileId: scenario === "noprofile" ? null : url.searchParams.get("profileId"),
+    });
   match = path.match(new RegExp(`^${base}/runs/(run_[^/]+)/cancel$`));
   if (req.method === "POST" && match) return send(200, { success: true });
   match = path.match(new RegExp(`^${base}/runs/run_([^/]+)$`));

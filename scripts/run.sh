@@ -51,6 +51,8 @@ esac
 
 # Evals run against the server's production deployment.
 args=(evals run --wait --timeout "${INPUT_TIMEOUT:-1800}" --json-file "$result" --markdown-file "$markdown.body")
+# Sign in with this profile instead of the server's own.
+if [ -n "${INPUT_PROFILE:-}" ]; then args+=(--profile "$INPUT_PROFILE"); fi
 if [ "${#suites[@]}" -eq 0 ]; then args+=(--all); else args+=("${suites[@]}"); fi
 
 # The readable report goes to the log; JSON and Markdown go to files.
