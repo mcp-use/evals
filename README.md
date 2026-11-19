@@ -139,7 +139,8 @@ The full report also goes to the job log, and the same summary is added to the j
 ## Costs and timeouts
 
 - Every suite the action starts is an eval run and uses your organization's eval credits, like a run started from the dashboard. Pick a trigger that matches your budget: a schedule or pushes to `main` cost less than every pull request.
-- Runs keep going on Manufact Cloud when the job is cancelled or times out. Open the dashboard to see their results.
+- Cancelling the job cancels the eval runs it started that haven't finished.
+- Runs still going when `timeout` runs out keep going on Manufact Cloud, and the step fails. Open the dashboard to see their results.
 
 ## Requirements
 

@@ -145,5 +145,47 @@ check "fail-on must be known" pass push INPUT_FAIL_ON=warnings \
   '[ "$CODE" = 1 ]' \
   'grep -q "fail-on must be none or failed" stdout'
 
+# Cancelling the job: SIGINT to the action's script while the CLI waits on
+# runs that never finish must cancel both runs and exit 130.
+cancel_check() {
+  local dir="$work/cancel"
+  mkdir -p "$dir"
+  MOCK_SCENARIO=timeout MOCK_LOG="$dir/requests" node "$root/test/mock-cloud.mjs" "$dir/port" &
+  local mock=$!
+  for _ in $(seq 50); do [ -s "$dir/port" ] && break; sleep 0.1; done
+  echo '{}' > "$dir/event.json"
+  # A background job of a script starts with SIGINT ignored, which a script can't trap.
+  # The Actions runner starts the step with the default handler, so restore it.
+  python3 -c 'import os, signal, sys; signal.signal(signal.SIGINT, signal.SIG_DFL); os.execvp(sys.argv[1], sys.argv[1:])' \
+    env MCP_USE_CLOUD_API_URL="http://127.0.0.1:$(cat "$dir/port")" MANUFACT_TOKEN=test-token \
+    MANUFACT_SERVER=11111111-1111-4111-8111-111111111111 INPUT_SUITES= INPUT_TIMEOUT=60 \
+    INPUT_FAIL_ON=failed INPUT_COMMENT=false GITHUB_OUTPUT="$dir/output" \
+    GITHUB_STEP_SUMMARY="$dir/summary" GITHUB_EVENT_PATH="$dir/event.json" GITHUB_EVENT_NAME=push \
+    GITHUB_REPOSITORY=acme/weather RUNNER_TEMP="$dir" GH_LOG="$dir/gh" \
+    "$root/scripts/run.sh" > "$dir/stdout" 2> "$dir/stderr" &
+  local action=$!
+  # The CLI prints its progress line once it is waiting (and handling signals).
+  for _ in $(seq 100); do grep -q "Waiting for" "$dir/manufact-evals.err" 2> /dev/null && break; sleep 0.1; done
+  kill -INT "$action"
+  local code=0
+  wait "$action" || code=$?
+  kill "$mock"
+  wait "$mock" 2> /dev/null || true
+  local ok=1
+  [ "$code" = 130 ] || { echo "  ✗ exit code $code, expected 130"; ok=0; }
+  for run in run_suite_rome run_suite_cart; do
+    grep -q "POST .*/runs/$run/cancel" "$dir/requests" || { echo "  ✗ no cancel for $run"; ok=0; }
+  done
+  grep -q "::warning title=Manufact evals::The job was cancelled" "$dir/stdout" || { echo "  ✗ no cancel warning"; ok=0; }
+  if [ "$ok" = 1 ]; then
+    echo "✓ cancelling the job cancels its runs"
+  else
+    echo "✗ cancelling the job cancels its runs"
+    sed 's/^/    /' "$dir/stdout" "$dir/stderr"
+    failures=$((failures + 1))
+  fi
+}
+cancel_check
+
 [ "$failures" -eq 0 ] || { echo "$failures scenario(s) failed"; exit 1; }
 echo "All scenarios passed."

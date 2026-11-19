@@ -6,13 +6,21 @@
 # Keep going when the CLI fails, so the failure still gets reported.
 set +e -uo pipefail
 
+temp="${RUNNER_TEMP:-$(mktemp -d)}"
 if [ -n "${EVALS_CLI_BIN:-}" ]; then
   # Testing only: run a locally built CLI instead of the pinned package.
   cli=(node "$EVALS_CLI_BIN")
 else
-  cli=(npx --yes "$CLI_PACKAGE")
+  # Installed and run with node rather than npx, so a cancelled job's signal
+  # reaches the CLI itself and it can cancel its runs.
+  prefix="$temp/mcp-use-cli"
+  if ! npm install --no-save --no-audit --no-fund --loglevel=error --prefix "$prefix" "$CLI_PACKAGE" > "$temp/mcp-use-cli-install.log" 2>&1; then
+    echo "::error title=Manufact evals::Could not install $CLI_PACKAGE"
+    cat "$temp/mcp-use-cli-install.log" >&2
+    exit 1
+  fi
+  cli=(node "$prefix/node_modules/@mcp-use/cli/dist/bin.js")
 fi
-temp="${RUNNER_TEMP:-$(mktemp -d)}"
 result="$temp/manufact-evals.json"
 errors="$temp/manufact-evals.err"
 markdown="$temp/manufact-evals.md"
@@ -46,8 +54,24 @@ args=(evals run --wait --timeout "${INPUT_TIMEOUT:-1800}" --json-file "$result" 
 if [ "${#suites[@]}" -eq 0 ]; then args+=(--all); else args+=("${suites[@]}"); fi
 
 # The readable report goes to the log; JSON and Markdown go to files.
-"${cli[@]}" "${args[@]}" 2> "$errors"
-code=$?
+# Run the CLI in the background so this script can pass on a cancelled job's
+# SIGINT and SIGTERM: the CLI then cancels the runs it started before exiting.
+"${cli[@]}" "${args[@]}" 2> "$errors" &
+cli_pid=$!
+trap 'kill -INT "$cli_pid" 2> /dev/null' INT
+trap 'kill -TERM "$cli_pid" 2> /dev/null' TERM
+while :; do
+  wait "$cli_pid"
+  code=$?
+  # A trapped signal ends `wait` early; keep waiting until the CLI has exited.
+  kill -0 "$cli_pid" 2> /dev/null || break
+done
+trap - INT TERM
+if [ "$code" -eq 130 ] || [ "$code" -eq 143 ]; then
+  cat "$errors" >&2
+  echo "::warning title=Manufact evals::The job was cancelled, so the eval runs it started were cancelled too."
+  exit "$code"
+fi
 # Drop the progress line and npm's own notices; keep everything else the CLI said.
 grep -v -E '^(Waiting for [0-9]+ eval runs?|npm (notice|warn)( .*)?)$' "$errors" > "$errors.clean"
 mv "$errors.clean" "$errors"

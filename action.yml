@@ -76,4 +76,5 @@ runs:
         # TODO: pin the first @mcp-use/cli release with `evals run --json-file/--markdown-file`.
         CLI_PACKAGE: "@mcp-use/cli@latest"
         NO_COLOR: "1"
-      run: '"$GITHUB_ACTION_PATH/scripts/run.sh"'
+      # exec: the script replaces the step's shell, so a cancelled job signals it directly.
+      run: 'exec "$GITHUB_ACTION_PATH/scripts/run.sh"'

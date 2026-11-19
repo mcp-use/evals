@@ -93,6 +93,8 @@ const http = createServer((req, res) => {
     return send(402, { error: "Out of eval credits", code: "INSUFFICIENT_CREDITS" });
   if (req.method === "POST" && match)
     return send(201, { id: `run_${match[1]}`, suiteId: match[1], status: "running", pass: null, score: null });
+  match = path.match(new RegExp(`^${base}/runs/(run_[^/]+)/cancel$`));
+  if (req.method === "POST" && match) return send(200, { success: true });
   match = path.match(new RegExp(`^${base}/runs/run_([^/]+)$`));
   if (req.method === "GET" && match) return send(200, run(`run_${match[1]}`, match[1]));
   send(404, { error: `No mock for ${req.method} ${path}` });
