@@ -94,6 +94,8 @@ const http = createServer((req, res) => {
   let match = path.match(new RegExp(`^${base}/suites/([^/]+)/runs$`));
   if (req.method === "POST" && match && scenario === "credits" && match[1] === "suite_cart")
     return send(403, { error: "Out of eval credits", code: "INSUFFICIENT_CREDITS" });
+  if (req.method === "POST" && match && scenario === "allrejected")
+    return send(400, { error: `${match[1]} has no clients` });
   if (req.method === "POST" && match && scenario === "rejected" && match[1] === "suite_rome")
     return send(400, { error: "No reachable URL for this server" });
   // A dropped connection on the first start of suite_cart, like a reset in front of Cloud.

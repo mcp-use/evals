@@ -85,7 +85,9 @@ key=$(printf '%s\n' "${suites[@]+"${suites[@]}"}" | hash | cut -c1-8)
 marker="<!-- manufact-evals:$MANUFACT_SERVER:$key -->"
 
 runs=$(jq -r '.runs | length' "$result" 2> /dev/null || echo 0)
-if [ "${runs:-0}" -eq 0 ]; then
+# Suites the CLI could not start have no run, but they did not pass either.
+unstarted=$(jq '.notStarted // [] | length' "$result" 2> /dev/null || echo 0)
+if [ "${runs:-0}" -eq 0 ] && [ "${unstarted:-0}" -eq 0 ]; then
   # No results (bad token, unknown server or suite, usage error...): use the CLI's error line.
   message=$(grep -v '^$' "$errors" | head -n 1)
   message="${message:-mcp-use evals run exited with code $code}"
@@ -104,8 +106,6 @@ if [ "${runs:-0}" -eq 0 ]; then
 else
   passed=$(jq '[.runs[] | select(.pass == true)] | length' "$result")
   pending=$(jq '[.runs[] | select(.status != "complete" and .status != "failed" and .status != "cancelled")] | length' "$result")
-  # Suites the CLI could not start have no run, but they did not pass either.
-  unstarted=$(jq '.notStarted // [] | length' "$result")
   total=$((runs + unstarted))
   failed=$((total - passed))
   output run-ids "$(jq -r '[.runs[].id] | join(" ")' "$result")"
@@ -125,6 +125,11 @@ else
   fi
   if [ "$unstarted" -gt 0 ]; then
     message="$message $unstarted could not start: $(jq -r '[.notStarted[].name] | join(", ")' "$result")."
+    # When nothing started, the CLI's error line says why.
+    if [ "$runs" -eq 0 ]; then
+      why=$(grep -v '^$' "$errors" | head -n 1)
+      [ -z "$why" ] || message="$message $why"
+    fi
   fi
   if [ "$failed" -eq 0 ]; then
     code=0

@@ -156,6 +156,8 @@ On `pull_request` events, the action comments the results on the pull request: a
 
 While the suites run, the job log shows each suite's dashboard link, then a line as each client and model finishes, with why it failed and a link to its report.
 
+A suite that can't start (Cloud rejects it, or the request keeps failing) doesn't stop the others: the report lists it under "did not start" with the reason, and it counts as failed. If no suite starts, the report still lists each one.
+
 There's one comment per server and `suites` selection. Later runs update it rather than adding a new comment. If the suites can't run at all (for example, the token is wrong or a suite name doesn't match), the comment shows the error instead.
 
 Commenting needs the job to have `pull-requests: write`. Without it, the action logs a warning and carries on; the eval result is unaffected. Pull requests from forks get a read-only token, so there's no comment for those.

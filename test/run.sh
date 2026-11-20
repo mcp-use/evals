@@ -138,6 +138,16 @@ check "a suite Cloud rejects doesn't stop the others" rejected push \
   'grep -q "1 could not start: Rome weather" stdout' \
   'grep -q "No reachable URL for this server" summary'
 
+check "when no suite starts, the report still lists each one" allrejected pull_request \
+  '[ "$CODE" = 1 ]' \
+  'grep -qx "passed=false" output' \
+  'grep -qx "failed-count=2" output' \
+  'grep -qx "not-started-count=2" output' \
+  'grep -q "::error title=Manufact evals::2 of 2 eval suites did not pass. 2 could not start: Rome weather, Checkout | cart." stdout' \
+  'grep -q "^## 🧪 Manufact Evals · Weather" summary' \
+  'grep -q "suite\\\\_rome has no clients" gh.body' \
+  '! grep -q "couldn.t run" gh.body'
+
 check "fail-on none still only warns when a suite can't start" rejected push INPUT_FAIL_ON=none \
   '[ "$CODE" = 0 ]' \
   'grep -q "::warning title=Manufact evals::2 of 2 eval suites did not pass. 1 could not start: Rome weather." stdout'
@@ -157,7 +167,8 @@ check "a Cloud that ignores the profile fails the step" noprofile push INPUT_PRO
   '[ "$CODE" = 1 ]' \
   'grep -q "::error title=Manufact evals::.*did not apply --profile" stdout' \
   'grep -q "POST .*/runs/run_suite_rome/cancel" requests' \
-  '! grep -q "^passed=" output'
+  'grep -qx "passed=false" output' \
+  'grep -qx "not-started-count=2" output'
 
 check "a bad token fails without runs" pass push MANUFACT_TOKEN=wrong \
   '[ "$CODE" = 1 ]' \
