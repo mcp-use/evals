@@ -48,8 +48,11 @@ outputs:
     description: Number of suites that passed.
     value: ${{ steps.evals.outputs.passed-count }}
   failed-count:
-    description: Number of suites that failed, were cancelled, or were still running at the timeout.
+    description: Number of suites that failed, were cancelled, were still running at the timeout, or could not start.
     value: ${{ steps.evals.outputs.failed-count }}
+  not-started-count:
+    description: Number of suites that could not start, so have no run. They count as failed.
+    value: ${{ steps.evals.outputs.not-started-count }}
   results-file:
     description: Path to the JSON results, with every run and its executions.
     value: ${{ steps.evals.outputs.results-file }}

@@ -134,7 +134,7 @@ https://manufact.com/cloud/<org>/servers/e3b0c442-98fc-4c14-9afb-f4c8996fb924/ov
 | `suites` | every enabled suite | Suites to run, one per line: IDs, names, or paths to suite files or folders. |
 | `profile` | the server's own | ID of a profile of the server's organization to sign in with instead, to run the suites as a different account. Not for native apps or clients running the plugin lifecycle. |
 | `timeout` | `1800` | Seconds to wait for the runs. Runs still going at the timeout keep running on Manufact Cloud, and the step fails. |
-| `fail-on` | `failed` | `failed` fails the job when a suite fails, is cancelled or times out. `none` only fails it when the suites can't run at all (for example, a bad token). |
+| `fail-on` | `failed` | `failed` fails the job when a suite fails, is cancelled, times out, or can't start. `none` only fails it when the suites can't run at all (for example, a bad token). |
 | `comment` | `true` | On pull requests, comment the results. Set `false` to turn it off. |
 | `github-token` | `github.token` | Token used to post the comment. |
 
@@ -145,7 +145,8 @@ https://manufact.com/cloud/<org>/servers/e3b0c442-98fc-4c14-9afb-f4c8996fb924/ov
 | `run-ids` | Eval run IDs, one per suite, separated by spaces |
 | `passed` | `true` when every suite passed, `false` otherwise; empty when the suites couldn't run |
 | `passed-count` | Number of suites that passed |
-| `failed-count` | Number of suites that failed, were cancelled, or were still running at the timeout |
+| `failed-count` | Number of suites that failed, were cancelled, were still running at the timeout, or could not start |
+| `not-started-count` | Number of suites that could not start (for example, Cloud rejected the suite, or kept dropping the request), so have no run. They count as failed. |
 | `results-file` | Path to the JSON results, with every run and its executions |
 | `dashboard-url` | Link to the server's eval suites in the Manufact dashboard |
 

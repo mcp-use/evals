@@ -48,7 +48,7 @@ function execution(pass, runId) {
 }
 
 function run(id, suiteId) {
-  const pass = scenario === "pass" || suiteId === "suite_rome";
+  const pass = ["pass", "flaky"].includes(scenario) || suiteId === "suite_rome";
   if (scenario === "timeout")
     return { id, suiteId, status: "running", pass: null, score: null, serverUrl: "https://weather.run.mcp-use.com/mcp", createdAt: "2026-11-18T00:00:00Z", scenarios: [] };
   return {
@@ -66,6 +66,7 @@ function run(id, suiteId) {
 }
 
 const requests = [];
+let cartStarts = 0;
 const http = createServer((req, res) => {
   const url = new URL(req.url, "http://localhost");
   requests.push(`${req.method} ${url.pathname}${url.search}`);
@@ -88,9 +89,16 @@ const http = createServer((req, res) => {
   if (path.startsWith("/api/v1/servers/")) return send(404, { error: "Server not found" });
   const base = `/api/v1/server-evals/${SERVER}`;
   if (req.method === "GET" && path === `${base}/suites`) return send(200, suites);
+  // The CLI lists a suite's runs before starting it; none exist here.
+  if (req.method === "GET" && path === `${base}/runs`) return send(200, { items: [], total: 0 });
   let match = path.match(new RegExp(`^${base}/suites/([^/]+)/runs$`));
   if (req.method === "POST" && match && scenario === "credits" && match[1] === "suite_cart")
-    return send(402, { error: "Out of eval credits", code: "INSUFFICIENT_CREDITS" });
+    return send(403, { error: "Out of eval credits", code: "INSUFFICIENT_CREDITS" });
+  if (req.method === "POST" && match && scenario === "rejected" && match[1] === "suite_rome")
+    return send(400, { error: "No reachable URL for this server" });
+  // A dropped connection on the first start of suite_cart, like a reset in front of Cloud.
+  if (req.method === "POST" && match && scenario === "flaky" && match[1] === "suite_cart" && ++cartStarts === 1)
+    return req.socket.destroy();
   if (req.method === "POST" && match)
     // Echo the profile like Cloud does; the "noprofile" scenario is a Cloud that ignores it.
     return send(201, {
