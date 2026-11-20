@@ -71,7 +71,7 @@ done
 trap - INT TERM
 if [ "$code" -eq 130 ] || [ "$code" -eq 143 ]; then
   cat "$errors" >&2
-  echo "::warning title=Manufact evals::The job was cancelled, so the eval runs it started were cancelled too."
+  echo "::warning title=Manufact evals::The job was cancelled, so the eval runs it started were asked to cancel. The log above says which Cloud confirmed."
   exit "$code"
 fi
 # Drop the progress line and npm's own notices; keep everything else the CLI said.
