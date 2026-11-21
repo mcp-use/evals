@@ -55,10 +55,14 @@ args=(evals run --wait --timeout "${INPUT_TIMEOUT:-1800}" --json-file "$result" 
 if [ -n "${INPUT_PROFILE:-}" ]; then args+=(--profile "$INPUT_PROFILE"); fi
 if [ "${#suites[@]}" -eq 0 ]; then args+=(--all); else args+=("${suites[@]}"); fi
 
-# One comment per server and suite selection, so several eval jobs can share a pull request.
+# One comment per server, profile and suite selection, so several eval jobs
+# (one per profile, say) can share a pull request.
 hash() { if command -v sha256sum > /dev/null; then sha256sum; else shasum -a 256; fi; }
 key=$(printf '%s\n' "${suites[@]+"${suites[@]}"}" | hash | cut -c1-8)
-marker="<!-- manufact-evals:$MANUFACT_SERVER:$key -->"
+marker="<!-- manufact-evals:$MANUFACT_SERVER:${INPUT_PROFILE:-default}:$key -->"
+# Tells apart the comments of jobs that run as different profiles.
+profile_note=""
+if [ -n "${INPUT_PROFILE:-}" ]; then profile_note="Profile \`$INPUT_PROFILE\`"; fi
 run_url="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-}/actions/runs/${GITHUB_RUN_ID:-}"
 pr=$(jq -r '.pull_request.number // empty' "${GITHUB_EVENT_PATH:-/dev/null}" 2> /dev/null)
 comment_id=""
@@ -88,7 +92,15 @@ comment() {
 
 # A short comment while there's no report yet: the heading, a status line and the run link.
 status_comment() {
-  printf '%s\n## 🧪 Manufact Evals\n\n%s\n\n[View the workflow run](%s)\n' "$marker" "$1" "$run_url" > "$markdown.running"
+  {
+    echo "$marker"
+    echo "## 🧪 Manufact Evals"
+    echo
+    if [ -n "$profile_note" ]; then echo "$profile_note" && echo; fi
+    echo "$1"
+    echo
+    echo "[View the workflow run]($run_url)"
+  } > "$markdown.running"
   comment "$markdown.running"
 }
 
@@ -135,6 +147,7 @@ if [ "${runs:-0}" -eq 0 ] && [ "${unstarted:-0}" -eq 0 ]; then
     echo "## ❌ Manufact evals couldn't run"
     echo
     echo "Server \`$MANUFACT_SERVER\`"
+    if [ -n "$profile_note" ]; then echo && echo "$profile_note"; fi
     echo
     echo '```text'
     cat "$errors"
@@ -154,6 +167,7 @@ else
   output results-file "$result"
   output dashboard-url "$(jq -r '.dashboardUrl // empty' "$result")"
 
+  # The CLI's report names the profile itself.
   { echo "$marker"; cat "$markdown.body"; } > "$markdown"
 
   if [ "$pending" -gt 0 ]; then

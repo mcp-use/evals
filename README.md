@@ -155,7 +155,7 @@ While the suites run, the job log shows each suite's dashboard link, then a line
 
 A suite that can't start (Cloud rejects it, or the request keeps failing) doesn't stop the others: the report lists it under "did not start" with the reason, and it counts as failed. If no suite starts, the report still lists each one.
 
-There's one comment per server and `suites` selection. Later runs update it, first to the running note and then to their results, rather than adding a new comment. If the job is cancelled, the note says so. If the suites can't run at all (for example, the API key is wrong or a suite ID doesn't exist), the comment shows the error instead.
+There's one comment per server, `profile` and `suites` selection, so jobs that run as different profiles each get their own, labelled with the profile. Later runs update it, first to the running note and then to their results, rather than adding a new comment. If the job is cancelled, the note says so. If the suites can't run at all (for example, the API key is wrong or a suite ID doesn't exist), the comment shows the error instead.
 
 Commenting needs the job to have `pull-requests: write`. Without it, the action logs one warning and carries on; the eval result is unaffected. Pull requests from forks get a read-only token, so there's no comment for those.
 

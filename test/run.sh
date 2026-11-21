@@ -15,7 +15,7 @@ export NO_COLOR=1 MCP_USE_POLL_INTERVAL_MS=200 HOME="$work/home" XDG_CONFIG_HOME
 mkdir -p "$work/home" "$work/bin"
 
 # A gh stand-in for `gh api` on one pull request's comments. It keeps them in
-# gh.comments (seeded from GH_SEED), logs each call to gh, noting whether the CLI
+# gh.comments (or GH_STORE, to share them between scenarios; seeded from GH_SEED), logs each call to gh, noting whether the CLI
 # had started, and saves each body it sends as gh.body.1, gh.body.2... and gh.body.
 # GH_FAIL makes every call fail, as without `pull-requests: write`.
 cat > "$work/bin/gh" << 'EOF'
@@ -24,7 +24,7 @@ started=no
 [ ! -e "$RUNNER_TEMP/manufact-evals.err" ] || started=yes
 echo "gh $* # cli started: $started" >> "$GH_LOG"
 [ -z "${GH_FAIL:-}" ] || { echo "HTTP 403: Resource not accessible by integration" >&2; exit 1; }
-store="$GH_LOG.comments"
+store="${GH_STORE:-$GH_LOG.comments}"
 [ -f "$store" ] || echo "${GH_SEED:-[]}" > "$store"
 method=GET path="" body="" filter=.
 shift
@@ -137,7 +137,7 @@ check "a failing suite fails the step and comments" fail pull_request \
   '! grep -q "execution=undefined" stdout' \
   'grep -q "<summary>Conversation</summary>" gh.body' \
   'grep -q "issues/7/comments -F body=@" gh' \
-  'head -n 1 gh.body | grep -q "^<!-- manufact-evals:11111111-1111-4111-8111-111111111111:[0-9a-f]\{8\} -->$"' \
+  'head -n 1 gh.body | grep -q "^<!-- manufact-evals:11111111-1111-4111-8111-111111111111:default:[0-9a-f]\{8\} -->$"' \
   'grep -qF "| [Checkout \\| cart](" gh.body'
 
 check "fail-on none only warns" fail push INPUT_FAIL_ON=none \
@@ -227,7 +227,7 @@ check "the running comment comes first and the report replaces it" fail pull_req
   '[ "$(grep -c -- "-X PATCH repos/acme/weather/issues/comments/100 " gh)" = 1 ]' \
   'grep -q -- "-X PATCH .*# cli started: yes$" gh' \
   '[ -e gh.body.2 ] && [ ! -e gh.body.3 ]' \
-  'head -n 1 gh.body.1 | grep -q "^<!-- manufact-evals:11111111-1111-4111-8111-111111111111:[0-9a-f]\{8\} -->$"' \
+  'head -n 1 gh.body.1 | grep -q "^<!-- manufact-evals:11111111-1111-4111-8111-111111111111:default:[0-9a-f]\{8\} -->$"' \
   'grep -qx "## 🧪 Manufact Evals" gh.body.1' \
   'grep -q "^⏳ Eval suites running" gh.body.1' \
   'grep -qF "[View the workflow run](https://github.com/acme/weather/actions/runs/4242)" gh.body.1' \
@@ -239,7 +239,7 @@ check "the running comment comes first and the report replaces it" fail pull_req
 
 # The comment an earlier run of the same job left on the pull request.
 key=$(printf '\n' | { sha256sum 2> /dev/null || shasum -a 256; } | cut -c1-8)
-earlier="[{\"id\":42,\"body\":\"<!-- manufact-evals:11111111-1111-4111-8111-111111111111:$key -->\\nearlier report\"}]"
+earlier="[{\"id\":42,\"body\":\"<!-- manufact-evals:11111111-1111-4111-8111-111111111111:default:$key -->\\nearlier report\"}]"
 check "a later run updates the earlier comment" pass pull_request "GH_SEED=$earlier" \
   '[ "$CODE" = 0 ]' \
   '! grep -q -- "-X POST" gh' \
@@ -248,6 +248,31 @@ check "a later run updates the earlier comment" pass pull_request "GH_SEED=$earl
   'grep -q "⏳ Eval suites running" gh.body.1' \
   '[ "$(jq length gh.comments)" = 1 ]' \
   'jq -e ".[0].body | contains(\"Manufact Evals · Weather\")" gh.comments > /dev/null'
+
+# Two jobs on one pull request, one per profile, then a rerun of the first.
+shared="$work/profile-comments.json"
+check "each profile gets its own comment" pass pull_request INPUT_PROFILE=profile_free "GH_STORE=$shared" \
+  '[ "$CODE" = 0 ]' \
+  '[ "$(jq length ../profile-comments.json)" = 1 ]' \
+  'head -n 1 gh.body | grep -q "^<!-- manufact-evals:11111111-1111-4111-8111-111111111111:profile_free:[0-9a-f]\{8\} -->$"' \
+  'grep -qx "Profile \`profile_free\`" gh.body.1' \
+  'grep -q "^## 🧪 Manufact Evals · Weather" gh.body' \
+  'grep -qF "Profile profile\\_free" gh.body'
+check "a second profile adds a second comment" pass pull_request INPUT_PROFILE=profile_paid "GH_STORE=$shared" \
+  '[ "$CODE" = 0 ]' \
+  '[ "$(grep -c -- "-X POST" gh)" = 1 ]' \
+  '! grep -q -- "-X PATCH repos/acme/weather/issues/comments/100 " gh' \
+  '[ "$(grep -c -- "-X PATCH repos/acme/weather/issues/comments/101 " gh)" = 1 ]' \
+  '[ "$(jq length ../profile-comments.json)" = 2 ]' \
+  'jq -e ".[0].body | contains(\"Profile profile\\\\_free\")" ../profile-comments.json > /dev/null' \
+  'jq -e ".[1].body | contains(\"Profile profile\\\\_paid\")" ../profile-comments.json > /dev/null'
+check "a rerun of one profile updates its own comment" fail pull_request INPUT_PROFILE=profile_free "GH_STORE=$shared" \
+  '[ "$CODE" = 1 ]' \
+  '! grep -q -- "-X POST" gh' \
+  '[ "$(grep -c -- "-X PATCH repos/acme/weather/issues/comments/100 " gh)" = 2 ]' \
+  '[ "$(jq length ../profile-comments.json)" = 2 ]' \
+  'jq -e ".[0].body | contains(\"Missing tool call\")" ../profile-comments.json > /dev/null' \
+  'jq -e ".[1].body | contains(\"Profile profile\\\\_paid\") and (contains(\"Missing tool call\") | not)" ../profile-comments.json > /dev/null'
 
 check "a comment that can't be posted warns once" fail pull_request GH_FAIL=1 \
   '[ "$CODE" = 1 ]' \
