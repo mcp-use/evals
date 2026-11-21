@@ -106,15 +106,15 @@ check "fail-on none only warns" fail push INPUT_FAIL_ON=none \
   'grep -qx "passed=false" output' \
   'grep -q "::warning title=Manufact evals::1 of 2" stdout'
 
-check "suites by name, one per line" pass push $'INPUT_SUITES=\n  Checkout | cart  \n\n' \
+check "suites by ID, one per line" pass push $'INPUT_SUITES=\n  suite_cart  \n\n' \
   '[ "$CODE" = 0 ]' \
   'grep -qx "run-ids=run_suite_cart" output' \
   'grep -q "POST /api/v1/server-evals/.*/suite_cart/runs" requests' \
   '! grep -q "suite_rome/runs" requests'
 
-check "an unknown suite starts nothing" pass pull_request INPUT_SUITES=Nope \
+check "an unknown suite ID starts nothing" pass pull_request INPUT_SUITES=suite_nope \
   '[ "$CODE" = 1 ]' \
-  'grep -q "::error title=Manufact evals::No eval suite matches" stdout' \
+  'grep -q "::error title=Manufact evals::.*suite_nope" stdout' \
   '! grep -q "^passed=" output' \
   '! grep -q "POST" requests' \
   'grep -q "^## ❌ Manufact evals couldn.t run" gh.body'
@@ -183,7 +183,7 @@ check "a timeout fails with the runs left" timeout push INPUT_TIMEOUT=1 \
 
 check "a suite starting with - is refused" pass push INPUT_SUITES=-x \
   '[ "$CODE" = 1 ]' \
-  'grep -q "Use its suite ID instead" stdout' \
+  'grep -q "isn.t a suite ID" stdout' \
   '[ ! -s requests ]'
 
 check "fail-on must be known" pass push INPUT_FAIL_ON=warnings \

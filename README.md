@@ -42,7 +42,7 @@ Evals run against your server's **production** deployment. Run the action after 
 
 ### Run some suites
 
-List suites in `suites`, one per line. Each line is a suite ID, a suite name, or the path to a suite file in the repository:
+List suite IDs in `suites`, one per line:
 
 ```yaml
       - uses: mcp-use/evals@v1
@@ -50,13 +50,11 @@ List suites in `suites`, one per line. Each line is a suite ID, a suite name, or
           api-key: ${{ secrets.MANUFACT_API_KEY }}
           server: e3b0c442-98fc-4c14-9afb-f4c8996fb924
           suites: |
-            Rome weather
             8d0f6b1e-2a4c-4e8b-9f3a-6c1d2e7b5a90
+            4c7a2e19-5b3d-4f80-a6e1-9d2b7c8f0e35
 ```
 
-- A name matches exactly first, then ignoring case. If several suites share the name, the step fails and lists their IDs: use an ID instead.
-- A path to a suite file, or a folder of them, runs the suite named in each file. It doesn't upload the file; the suite must already exist on Manufact Cloud. Paths need `actions/checkout` first.
-- A line can't start with `-`. Use the suite's ID instead.
+A suite's ID is in its dashboard URL, after `/evals/suites/`. Leave `suites` empty to run every enabled suite.
 
 ### Keep suites in the repository
 
@@ -74,7 +72,6 @@ Push the suite files before running them, so the suites on Manufact Cloud match 
         with:
           api-key: ${{ secrets.MANUFACT_API_KEY }}
           server: e3b0c442-98fc-4c14-9afb-f4c8996fb924
-          suites: evals/
 ```
 
 Push only from your default branch. A push replaces the suite on Manufact Cloud for everyone, so pushing from a pull request would change the suites before the change is reviewed.
@@ -131,7 +128,7 @@ https://manufact.com/cloud/<org>/servers/e3b0c442-98fc-4c14-9afb-f4c8996fb924/ov
 | --- | --- | --- |
 | `api-key` | | Required. Manufact API key, scoped to the server's organization. Store it as a secret. See [how to create an API key](https://docs.manufact.com/dashboard/api-keys). |
 | `server` | | Required. Server ID: the UUID in the server's dashboard URL. See [Find your server ID](#find-your-server-id). |
-| `suites` | every enabled suite | Suites to run, one per line: IDs, names, or paths to suite files or folders. |
+| `suites` | every enabled suite | IDs of the suites to run, one suite ID per line. |
 | `profile` | the server's own | ID of a profile of the server's organization to sign in with instead, to run the suites as a different account. Not for native apps or clients running the plugin lifecycle. |
 | `timeout` | `1800` | Seconds to wait for the runs. Runs still going at the timeout keep running on Manufact Cloud, and the step fails. |
 | `fail-on` | `failed` | `failed` fails the job when a suite fails, is cancelled, times out, or can't start. `none` only fails it when the suites can't run at all (for example, a bad API key). |
@@ -158,7 +155,7 @@ While the suites run, the job log shows each suite's dashboard link, then a line
 
 A suite that can't start (Cloud rejects it, or the request keeps failing) doesn't stop the others: the report lists it under "did not start" with the reason, and it counts as failed. If no suite starts, the report still lists each one.
 
-There's one comment per server and `suites` selection. Later runs update it rather than adding a new comment. If the suites can't run at all (for example, the API key is wrong or a suite name doesn't match), the comment shows the error instead.
+There's one comment per server and `suites` selection. Later runs update it rather than adding a new comment. If the suites can't run at all (for example, the API key is wrong or a suite ID doesn't exist), the comment shows the error instead.
 
 Commenting needs the job to have `pull-requests: write`. Without it, the action logs a warning and carries on; the eval result is unaffected. Pull requests from forks get a read-only token, so there's no comment for those.
 

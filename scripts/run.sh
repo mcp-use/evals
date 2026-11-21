@@ -28,14 +28,14 @@ rm -f "$result" "$errors" "$markdown" "$markdown.body"
 output() { echo "$1=$2" >> "${GITHUB_OUTPUT:-/dev/null}"; }
 error() { echo "::error title=Manufact evals::$1"; }
 
-# One suite per line. Names can contain spaces and commas, so lines are the only separator.
+# One suite ID per line, passed to the CLI as they are.
 suites=()
 while IFS= read -r line; do
   line="${line#"${line%%[![:space:]]*}"}"
   line="${line%"${line##*[![:space:]]}"}"
   [ -z "$line" ] && continue
   if [ "${line:0:1}" = "-" ]; then
-    error "Suite \"$line\" starts with '-', which the CLI reads as an option. Use its suite ID instead."
+    error "\"$line\" isn't a suite ID: it starts with '-', which the CLI reads as an option."
     exit 1
   fi
   suites+=("$line")
@@ -88,7 +88,7 @@ runs=$(jq -r '.runs | length' "$result" 2> /dev/null || echo 0)
 # Suites the CLI could not start have no run, but they did not pass either.
 unstarted=$(jq '.notStarted // [] | length' "$result" 2> /dev/null || echo 0)
 if [ "${runs:-0}" -eq 0 ] && [ "${unstarted:-0}" -eq 0 ]; then
-  # No results (bad API key, unknown server or suite, usage error...): use the CLI's error line.
+  # No results (bad API key, unknown server or suite ID, usage error...): use the CLI's error line.
   message=$(grep -v '^$' "$errors" | head -n 1)
   message="${message:-mcp-use evals run exited with code $code}"
   error "$message"

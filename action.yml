@@ -13,7 +13,7 @@ inputs:
     description: Server ID, the UUID in the server's dashboard URL (manufact.com/cloud/<org>/servers/<server-id>/...).
     required: true
   suites:
-    description: Suites to run, one per line. Each line is a suite ID, a suite name, or a path to a suite file or folder in the repository (the suite named in the file runs). Leave empty to run every enabled suite.
+    description: IDs of the suites to run, one suite ID per line. Leave empty to run every enabled suite.
     required: false
     default: ""
   profile:
