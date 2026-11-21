@@ -14,13 +14,51 @@ export CLI_PACKAGE="${CLI_PACKAGE:-$(sed -n 's/^ *CLI_PACKAGE: "\(.*\)"$/\1/p' "
 export NO_COLOR=1 MCP_USE_POLL_INTERVAL_MS=200 HOME="$work/home" XDG_CONFIG_HOME="$work/home"
 mkdir -p "$work/home" "$work/bin"
 
-# A gh stand-in: lists no earlier comments and records what it would post.
+# A gh stand-in for `gh api` on one pull request's comments. It keeps them in
+# gh.comments (or GH_STORE, to share them between scenarios; seeded from GH_SEED), logs each call to gh, noting whether the CLI
+# had started, and saves each body it sends as gh.body.1, gh.body.2... and gh.body.
+# GH_FAIL makes every call fail, as without `pull-requests: write`.
 cat > "$work/bin/gh" << 'EOF'
 #!/usr/bin/env bash
-echo "gh $*" >> "$GH_LOG"
-for arg in "$@"; do
-  case "$arg" in body=@*) cp "${arg#body=@}" "$GH_LOG.body" ;; esac
+started=no
+[ ! -e "$RUNNER_TEMP/manufact-evals.err" ] || started=yes
+echo "gh $* # cli started: $started" >> "$GH_LOG"
+[ -z "${GH_FAIL:-}" ] || { echo "HTTP 403: Resource not accessible by integration" >&2; exit 1; }
+store="${GH_STORE:-$GH_LOG.comments}"
+[ -f "$store" ] || echo "${GH_SEED:-[]}" > "$store"
+method=GET path="" body="" filter=.
+shift
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -X) method=$2; shift ;;
+    -F) body=${2#body=@}; shift ;;
+    --jq) filter=$2; shift ;;
+    --paginate) ;;
+    *) path=$1 ;;
+  esac
+  shift
 done
+if [ -n "$body" ]; then
+  n=$(($(cat "$GH_LOG.count" 2> /dev/null || echo 0) + 1))
+  echo "$n" > "$GH_LOG.count"
+  cp "$body" "$GH_LOG.body.$n"
+  cp "$body" "$GH_LOG.body"
+fi
+case "$method" in
+  GET) jq -r "$filter" "$store" ;;
+  POST)
+    id=$((100 + $(jq length "$store")))
+    jq --argjson id "$id" --rawfile body "$body" '. + [{id: $id, body: $body}]' "$store" > "$store.new"
+    mv "$store.new" "$store"
+    jq -r --argjson id "$id" ".[] | select(.id == \$id) | $filter" "$store"
+    ;;
+  PATCH)
+    id=${path##*/}
+    jq -e --argjson id "$id" 'any(.id == $id)' "$store" > /dev/null || { echo "HTTP 404: Not Found" >&2; exit 1; }
+    jq --argjson id "$id" --rawfile body "$body" 'map(if .id == $id then .body = $body else . end)' "$store" > "$store.new"
+    mv "$store.new" "$store"
+    ;;
+esac
 EOF
 chmod +x "$work/bin/gh"
 export PATH="$work/bin:$PATH"
@@ -47,7 +85,8 @@ check() {
     INPUT_SUITES= INPUT_TIMEOUT=30 INPUT_FAIL_ON=failed INPUT_COMMENT=true
     GITHUB_OUTPUT="$dir/output" GITHUB_STEP_SUMMARY="$dir/summary"
     GITHUB_EVENT_PATH="$dir/event.json" GITHUB_EVENT_NAME="$event"
-    GITHUB_REPOSITORY=acme/weather RUNNER_TEMP="$dir" GH_LOG="$dir/gh"
+    GITHUB_REPOSITORY=acme/weather GITHUB_SERVER_URL=https://github.com GITHUB_RUN_ID=4242
+    RUNNER_TEMP="$dir" GH_LOG="$dir/gh"
   )
   local asserts=()
   for arg in "$@"; do
@@ -98,7 +137,7 @@ check "a failing suite fails the step and comments" fail pull_request \
   '! grep -q "execution=undefined" stdout' \
   'grep -q "<summary>Conversation</summary>" gh.body' \
   'grep -q "issues/7/comments -F body=@" gh' \
-  'head -n 1 gh.body | grep -q "^<!-- manufact-evals:11111111-1111-4111-8111-111111111111:[0-9a-f]\{8\} -->$"' \
+  'head -n 1 gh.body | grep -q "^<!-- manufact-evals:11111111-1111-4111-8111-111111111111:default:[0-9a-f]\{8\} -->$"' \
   'grep -qF "| [Checkout \\| cart](" gh.body'
 
 check "fail-on none only warns" fail push INPUT_FAIL_ON=none \
@@ -106,15 +145,15 @@ check "fail-on none only warns" fail push INPUT_FAIL_ON=none \
   'grep -qx "passed=false" output' \
   'grep -q "::warning title=Manufact evals::1 of 2" stdout'
 
-check "suites by name, one per line" pass push $'INPUT_SUITES=\n  Checkout | cart  \n\n' \
+check "suites by ID, one per line" pass push $'INPUT_SUITES=\n  suite_cart  \n\n' \
   '[ "$CODE" = 0 ]' \
   'grep -qx "run-ids=run_suite_cart" output' \
   'grep -q "POST /api/v1/server-evals/.*/suite_cart/runs" requests' \
   '! grep -q "suite_rome/runs" requests'
 
-check "an unknown suite starts nothing" pass pull_request INPUT_SUITES=Nope \
+check "an unknown suite ID starts nothing" pass pull_request INPUT_SUITES=suite_nope \
   '[ "$CODE" = 1 ]' \
-  'grep -q "::error title=Manufact evals::No eval suite matches" stdout' \
+  'grep -q "::error title=Manufact evals::.*suite_nope" stdout' \
   '! grep -q "^passed=" output' \
   '! grep -q "POST" requests' \
   'grep -q "^## ❌ Manufact evals couldn.t run" gh.body'
@@ -170,7 +209,7 @@ check "a Cloud that ignores the profile fails the step" noprofile push INPUT_PRO
   'grep -qx "passed=false" output' \
   'grep -qx "not-started-count=2" output'
 
-check "a bad token fails without runs" pass push MANUFACT_TOKEN=wrong \
+check "a bad API key fails without runs" pass push MANUFACT_TOKEN=wrong \
   '[ "$CODE" = 1 ]' \
   'grep -q "::error title=Manufact evals::Unauthorized" stdout' \
   '[ ! -s output ]'
@@ -181,9 +220,72 @@ check "a timeout fails with the runs left" timeout push INPUT_TIMEOUT=1 \
   'grep -q "Timed out after 1s with 2 of 2 eval runs unfinished" stdout' \
   'grep -q "⏳ 2 still running" summary'
 
+check "the running comment comes first and the report replaces it" fail pull_request \
+  '[ "$CODE" = 1 ]' \
+  '[ "$(grep -c -- "-X POST" gh)" = 1 ]' \
+  'grep -q -- "-X POST repos/acme/weather/issues/7/comments .*# cli started: no$" gh' \
+  '[ "$(grep -c -- "-X PATCH repos/acme/weather/issues/comments/100 " gh)" = 1 ]' \
+  'grep -q -- "-X PATCH .*# cli started: yes$" gh' \
+  '[ -e gh.body.2 ] && [ ! -e gh.body.3 ]' \
+  'head -n 1 gh.body.1 | grep -q "^<!-- manufact-evals:11111111-1111-4111-8111-111111111111:default:[0-9a-f]\{8\} -->$"' \
+  'grep -qx "## 🧪 Manufact Evals" gh.body.1' \
+  'grep -q "^⏳ Eval suites running" gh.body.1' \
+  'grep -qF "[View the workflow run](https://github.com/acme/weather/actions/runs/4242)" gh.body.1' \
+  '[ "$(head -n 1 gh.body.1)" = "$(head -n 1 gh.body.2)" ]' \
+  'grep -q "^## 🧪 Manufact Evals · Weather" gh.body.2' \
+  '[ "$(jq length gh.comments)" = 1 ]' \
+  'jq -e ".[0].body | contains(\"Missing tool call\")" gh.comments > /dev/null' \
+  '! grep -q "Eval suites running" summary'
+
+# The comment an earlier run of the same job left on the pull request.
+key=$(printf '\n' | { sha256sum 2> /dev/null || shasum -a 256; } | cut -c1-8)
+earlier="[{\"id\":42,\"body\":\"<!-- manufact-evals:11111111-1111-4111-8111-111111111111:default:$key -->\\nearlier report\"}]"
+check "a later run updates the earlier comment" pass pull_request "GH_SEED=$earlier" \
+  '[ "$CODE" = 0 ]' \
+  '! grep -q -- "-X POST" gh' \
+  '[ "$(grep -c -- "-X PATCH repos/acme/weather/issues/comments/42 " gh)" = 2 ]' \
+  '[ "$(grep -c -- "--paginate" gh)" = 1 ]' \
+  'grep -q "⏳ Eval suites running" gh.body.1' \
+  '[ "$(jq length gh.comments)" = 1 ]' \
+  'jq -e ".[0].body | contains(\"Manufact Evals · Weather\")" gh.comments > /dev/null'
+
+# Two jobs on one pull request, one per profile, then a rerun of the first.
+shared="$work/profile-comments.json"
+check "each profile gets its own comment" pass pull_request INPUT_PROFILE=profile_free "GH_STORE=$shared" \
+  '[ "$CODE" = 0 ]' \
+  '[ "$(jq length ../profile-comments.json)" = 1 ]' \
+  'head -n 1 gh.body | grep -q "^<!-- manufact-evals:11111111-1111-4111-8111-111111111111:profile_free:[0-9a-f]\{8\} -->$"' \
+  'grep -qx "Profile \`profile_free\`" gh.body.1' \
+  'grep -q "^## 🧪 Manufact Evals · Weather" gh.body' \
+  'grep -qF "Profile profile\\_free" gh.body'
+check "a second profile adds a second comment" pass pull_request INPUT_PROFILE=profile_paid "GH_STORE=$shared" \
+  '[ "$CODE" = 0 ]' \
+  '[ "$(grep -c -- "-X POST" gh)" = 1 ]' \
+  '! grep -q -- "-X PATCH repos/acme/weather/issues/comments/100 " gh' \
+  '[ "$(grep -c -- "-X PATCH repos/acme/weather/issues/comments/101 " gh)" = 1 ]' \
+  '[ "$(jq length ../profile-comments.json)" = 2 ]' \
+  'jq -e ".[0].body | contains(\"Profile profile\\\\_free\")" ../profile-comments.json > /dev/null' \
+  'jq -e ".[1].body | contains(\"Profile profile\\\\_paid\")" ../profile-comments.json > /dev/null'
+check "a rerun of one profile updates its own comment" fail pull_request INPUT_PROFILE=profile_free "GH_STORE=$shared" \
+  '[ "$CODE" = 1 ]' \
+  '! grep -q -- "-X POST" gh' \
+  '[ "$(grep -c -- "-X PATCH repos/acme/weather/issues/comments/100 " gh)" = 2 ]' \
+  '[ "$(jq length ../profile-comments.json)" = 2 ]' \
+  'jq -e ".[0].body | contains(\"Missing tool call\")" ../profile-comments.json > /dev/null' \
+  'jq -e ".[1].body | contains(\"Profile profile\\\\_paid\") and (contains(\"Missing tool call\") | not)" ../profile-comments.json > /dev/null'
+
+check "a comment that can't be posted warns once" fail pull_request GH_FAIL=1 \
+  '[ "$CODE" = 1 ]' \
+  'grep -qx "failed-count=1" output' \
+  '[ "$(grep -c "::warning title=Manufact evals::Couldn.t comment on the pull request" stdout)" = 1 ]'
+
+check "comment false posts nothing" fail pull_request INPUT_COMMENT=false \
+  '[ "$CODE" = 1 ]' \
+  '[ ! -s gh ]'
+
 check "a suite starting with - is refused" pass push INPUT_SUITES=-x \
   '[ "$CODE" = 1 ]' \
-  'grep -q "Use its suite ID instead" stdout' \
+  'grep -q "isn.t a suite ID" stdout' \
   '[ ! -s requests ]'
 
 check "fail-on must be known" pass push INPUT_FAIL_ON=warnings \
@@ -198,15 +300,17 @@ cancel_check() {
   MOCK_SCENARIO=timeout MOCK_LOG="$dir/requests" node "$root/test/mock-cloud.mjs" "$dir/port" &
   local mock=$!
   for _ in $(seq 50); do [ -s "$dir/port" ] && break; sleep 0.1; done
-  echo '{}' > "$dir/event.json"
+  echo '{"pull_request":{"number":7}}' > "$dir/event.json"
+  touch "$dir/gh"
   # A background job of a script starts with SIGINT ignored, which a script can't trap.
   # The Actions runner starts the step with the default handler, so restore it.
   python3 -c 'import os, signal, sys; signal.signal(signal.SIGINT, signal.SIG_DFL); os.execvp(sys.argv[1], sys.argv[1:])' \
     env MCP_USE_CLOUD_API_URL="http://127.0.0.1:$(cat "$dir/port")" MANUFACT_TOKEN=test-token \
     MANUFACT_SERVER=11111111-1111-4111-8111-111111111111 INPUT_SUITES= INPUT_TIMEOUT=60 \
-    INPUT_FAIL_ON=failed INPUT_COMMENT=false GITHUB_OUTPUT="$dir/output" \
-    GITHUB_STEP_SUMMARY="$dir/summary" GITHUB_EVENT_PATH="$dir/event.json" GITHUB_EVENT_NAME=push \
-    GITHUB_REPOSITORY=acme/weather RUNNER_TEMP="$dir" GH_LOG="$dir/gh" \
+    INPUT_FAIL_ON=failed INPUT_COMMENT=true GITHUB_OUTPUT="$dir/output" \
+    GITHUB_STEP_SUMMARY="$dir/summary" GITHUB_EVENT_PATH="$dir/event.json" GITHUB_EVENT_NAME=pull_request \
+    GITHUB_REPOSITORY=acme/weather GITHUB_SERVER_URL=https://github.com GITHUB_RUN_ID=4242 \
+    RUNNER_TEMP="$dir" GH_LOG="$dir/gh" \
     "$root/scripts/run.sh" > "$dir/stdout" 2> "$dir/stderr" &
   local action=$!
   # The CLI prints its progress line once it is waiting (and handling signals).
@@ -222,6 +326,9 @@ cancel_check() {
     grep -q "POST .*/runs/$run/cancel" "$dir/requests" || { echo "  ✗ no cancel for $run"; ok=0; }
   done
   grep -q "::warning title=Manufact evals::The job was cancelled" "$dir/stdout" || { echo "  ✗ no cancel warning"; ok=0; }
+  grep -q "^⏳ Eval suites running" "$dir/gh.body.1" || { echo "  ✗ no running comment"; ok=0; }
+  grep -q "^⚪ Cancelled" "$dir/gh.body.2" 2> /dev/null || { echo "  ✗ the running comment wasn't marked cancelled"; ok=0; }
+  [ "$(jq length "$dir/gh.comments")" = 1 ] || { echo "  ✗ more than one comment"; ok=0; }
   if [ "$ok" = 1 ]; then
     echo "✓ cancelling the job cancels its runs"
   else

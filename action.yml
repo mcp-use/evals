@@ -6,14 +6,14 @@ branding:
   color: black
 
 inputs:
-  token:
-    description: Manufact API key. Store it as a repository secret.
+  api-key:
+    description: Manufact API key, scoped to the server's organization. Store it as a repository secret.
     required: true
   server:
     description: Server ID, the UUID in the server's dashboard URL (manufact.com/cloud/<org>/servers/<server-id>/...).
     required: true
   suites:
-    description: Suites to run, one per line. Each line is a suite ID, a suite name, or a path to a suite file or folder in the repository (the suite named in the file runs). Leave empty to run every enabled suite.
+    description: IDs of the suites to run, one suite ID per line. Leave empty to run every enabled suite.
     required: false
     default: ""
   profile:
@@ -72,7 +72,7 @@ runs:
       id: evals
       shell: bash
       env:
-        MANUFACT_TOKEN: ${{ inputs.token }}
+        MANUFACT_TOKEN: ${{ inputs.api-key }}
         MANUFACT_SERVER: ${{ inputs.server }}
         INPUT_SUITES: ${{ inputs.suites }}
         INPUT_TIMEOUT: ${{ inputs.timeout }}

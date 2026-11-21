@@ -24,18 +24,18 @@ fi
 result="$temp/manufact-evals.json"
 errors="$temp/manufact-evals.err"
 markdown="$temp/manufact-evals.md"
-rm -f "$result" "$errors" "$markdown" "$markdown.body"
+rm -f "$result" "$errors" "$markdown" "$markdown.body" "$markdown.running"
 output() { echo "$1=$2" >> "${GITHUB_OUTPUT:-/dev/null}"; }
 error() { echo "::error title=Manufact evals::$1"; }
 
-# One suite per line. Names can contain spaces and commas, so lines are the only separator.
+# One suite ID per line, passed to the CLI as they are.
 suites=()
 while IFS= read -r line; do
   line="${line#"${line%%[![:space:]]*}"}"
   line="${line%"${line##*[![:space:]]}"}"
   [ -z "$line" ] && continue
   if [ "${line:0:1}" = "-" ]; then
-    error "Suite \"$line\" starts with '-', which the CLI reads as an option. Use its suite ID instead."
+    error "\"$line\" isn't a suite ID: it starts with '-', which the CLI reads as an option."
     exit 1
   fi
   suites+=("$line")
@@ -55,6 +55,58 @@ args=(evals run --wait --timeout "${INPUT_TIMEOUT:-1800}" --json-file "$result" 
 if [ -n "${INPUT_PROFILE:-}" ]; then args+=(--profile "$INPUT_PROFILE"); fi
 if [ "${#suites[@]}" -eq 0 ]; then args+=(--all); else args+=("${suites[@]}"); fi
 
+# One comment per server, profile and suite selection, so several eval jobs
+# (one per profile, say) can share a pull request.
+hash() { if command -v sha256sum > /dev/null; then sha256sum; else shasum -a 256; fi; }
+key=$(printf '%s\n' "${suites[@]+"${suites[@]}"}" | hash | cut -c1-8)
+marker="<!-- manufact-evals:$MANUFACT_SERVER:${INPUT_PROFILE:-default}:$key -->"
+# Tells apart the comments of jobs that run as different profiles.
+profile_note=""
+if [ -n "${INPUT_PROFILE:-}" ]; then profile_note="Profile \`$INPUT_PROFILE\`"; fi
+run_url="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-}/actions/runs/${GITHUB_RUN_ID:-}"
+pr=$(jq -r '.pull_request.number // empty' "${GITHUB_EVENT_PATH:-/dev/null}" 2> /dev/null)
+comment_id=""
+comment_warned=""
+
+# Post a file as the pull request comment, or update the comment posted earlier.
+# A comment that can't be posted is a warning, given once; the step carries on.
+comment() {
+  [ "${INPUT_COMMENT:-true}" = "true" ] && [ -n "$pr" ] || return 0
+  local comments="repos/$GITHUB_REPOSITORY/issues" id
+  if [ -z "$comment_id" ]; then
+    comment_id=$(gh api --paginate "$comments/$pr/comments" --jq ".[] | select(.body | startswith(\"$marker\")) | .id" 2> /dev/null | head -n 1)
+  fi
+  # Update our earlier comment; post a new one if there's none, or if the
+  # marked comment isn't ours to edit.
+  if [ -n "$comment_id" ] && gh api -X PATCH "$comments/comments/$comment_id" -F body=@"$1" > /dev/null; then
+    return 0
+  fi
+  if id=$(gh api -X POST "$comments/$pr/comments" -F body=@"$1" --jq .id); then
+    comment_id=$id
+    return 0
+  fi
+  [ -n "$comment_warned" ] ||
+    echo "::warning title=Manufact evals::Couldn't comment on the pull request. Grant the job 'pull-requests: write', or set comment: false."
+  comment_warned=1
+}
+
+# A short comment while there's no report yet: the heading, a status line and the run link.
+status_comment() {
+  {
+    echo "$marker"
+    echo "## 🧪 Manufact Evals"
+    echo
+    if [ -n "$profile_note" ]; then echo "$profile_note" && echo; fi
+    echo "$1"
+    echo
+    echo "[View the workflow run]($run_url)"
+  } > "$markdown.running"
+  comment "$markdown.running"
+}
+
+# Show on the pull request that the suites are running; the report replaces it.
+status_comment "⏳ Eval suites running. The results replace this comment when they finish."
+
 # The readable report goes to the log; JSON and Markdown go to files.
 # Run the CLI in the background so this script can pass on a cancelled job's
 # SIGINT and SIGTERM: the CLI then cancels the runs it started before exiting.
@@ -72,6 +124,9 @@ trap - INT TERM
 if [ "$code" -eq 130 ] || [ "$code" -eq 143 ]; then
   cat "$errors" >&2
   echo "::warning title=Manufact evals::The job was cancelled, so the eval runs it started were asked to cancel. The log above says which Cloud confirmed."
+  # Don't leave the pull request saying the suites are still running.
+  [ -z "$comment_id" ] ||
+    status_comment "⚪ Cancelled. The job was cancelled before the eval suites finished, so the runs it started were asked to cancel."
   exit "$code"
 fi
 # Drop the progress line and npm's own notices; keep everything else the CLI said.
@@ -79,16 +134,11 @@ grep -v -E '^(Waiting for [0-9]+ eval runs?|npm (notice|warn)( .*)?)$' "$errors"
 mv "$errors.clean" "$errors"
 cat "$errors" >&2
 
-# One comment per server and suite selection, so several eval jobs can share a pull request.
-hash() { if command -v sha256sum > /dev/null; then sha256sum; else shasum -a 256; fi; }
-key=$(printf '%s\n' "${suites[@]+"${suites[@]}"}" | hash | cut -c1-8)
-marker="<!-- manufact-evals:$MANUFACT_SERVER:$key -->"
-
 runs=$(jq -r '.runs | length' "$result" 2> /dev/null || echo 0)
 # Suites the CLI could not start have no run, but they did not pass either.
 unstarted=$(jq '.notStarted // [] | length' "$result" 2> /dev/null || echo 0)
 if [ "${runs:-0}" -eq 0 ] && [ "${unstarted:-0}" -eq 0 ]; then
-  # No results (bad token, unknown server or suite, usage error...): use the CLI's error line.
+  # No results (bad API key, unknown server or suite ID, usage error...): use the CLI's error line.
   message=$(grep -v '^$' "$errors" | head -n 1)
   message="${message:-mcp-use evals run exited with code $code}"
   error "$message"
@@ -97,6 +147,7 @@ if [ "${runs:-0}" -eq 0 ] && [ "${unstarted:-0}" -eq 0 ]; then
     echo "## ❌ Manufact evals couldn't run"
     echo
     echo "Server \`$MANUFACT_SERVER\`"
+    if [ -n "$profile_note" ]; then echo && echo "$profile_note"; fi
     echo
     echo '```text'
     cat "$errors"
@@ -116,6 +167,7 @@ else
   output results-file "$result"
   output dashboard-url "$(jq -r '.dashboardUrl // empty' "$result")"
 
+  # The CLI's report names the profile itself.
   { echo "$marker"; cat "$markdown.body"; } > "$markdown"
 
   if [ "$pending" -gt 0 ]; then
@@ -145,17 +197,7 @@ fi
 
 tail -n +2 "$markdown" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
 
-# Post or update the comment on the pull request.
-pr=$(jq -r '.pull_request.number // empty' "${GITHUB_EVENT_PATH:-/dev/null}" 2> /dev/null)
-if [ "${INPUT_COMMENT:-true}" = "true" ] && [ -n "$pr" ]; then
-  comments="repos/$GITHUB_REPOSITORY/issues"
-  existing=$(gh api --paginate "$comments/$pr/comments" --jq ".[] | select(.body | startswith(\"$marker\")) | .id" 2> /dev/null | head -n 1)
-  # Update our earlier comment; post a new one if there's none, or if the
-  # marked comment isn't ours to edit.
-  if ! { [ -n "$existing" ] && gh api -X PATCH "$comments/comments/$existing" -F body=@"$markdown" > /dev/null; } &&
-    ! gh api -X POST "$comments/$pr/comments" -F body=@"$markdown" > /dev/null; then
-    echo "::warning title=Manufact evals::Couldn't comment on the pull request. Grant the job 'pull-requests: write', or set comment: false."
-  fi
-fi
+# Replace the running comment with the report.
+comment "$markdown"
 
 exit "$code"

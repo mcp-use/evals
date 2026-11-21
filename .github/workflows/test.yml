@@ -46,7 +46,7 @@ jobs:
         uses: ./
         continue-on-error: true
         with:
-          token: ${{ secrets.MANUFACT_TOKEN }}
+          api-key: ${{ secrets.MANUFACT_TOKEN }}
           server: ${{ vars.EVALS_TEST_SERVER }}
           fail-on: none
       - name: Assert
