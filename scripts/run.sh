@@ -88,7 +88,7 @@ runs=$(jq -r '.runs | length' "$result" 2> /dev/null || echo 0)
 # Suites the CLI could not start have no run, but they did not pass either.
 unstarted=$(jq '.notStarted // [] | length' "$result" 2> /dev/null || echo 0)
 if [ "${runs:-0}" -eq 0 ] && [ "${unstarted:-0}" -eq 0 ]; then
-  # No results (bad token, unknown server or suite, usage error...): use the CLI's error line.
+  # No results (bad API key, unknown server or suite, usage error...): use the CLI's error line.
   message=$(grep -v '^$' "$errors" | head -n 1)
   message="${message:-mcp-use evals run exited with code $code}"
   error "$message"

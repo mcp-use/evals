@@ -170,7 +170,7 @@ check "a Cloud that ignores the profile fails the step" noprofile push INPUT_PRO
   'grep -qx "passed=false" output' \
   'grep -qx "not-started-count=2" output'
 
-check "a bad token fails without runs" pass push MANUFACT_TOKEN=wrong \
+check "a bad API key fails without runs" pass push MANUFACT_TOKEN=wrong \
   '[ "$CODE" = 1 ]' \
   'grep -q "::error title=Manufact evals::Unauthorized" stdout' \
   '[ ! -s output ]'

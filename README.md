@@ -12,7 +12,7 @@ Each eval suite sends a conversation to your server through one or more AI clien
 2. **Deploy or connect your MCP server.** [Deploy it from GitHub](https://docs.manufact.com/dashboard/quickstart), or [connect a server you host elsewhere](https://docs.manufact.com/dashboard/connect-existing-server). Note its [server ID](#find-your-server-id).
 3. **Create eval suites.** Create them in the dashboard under **Evals**, or write them as YAML files and push them with `npx @mcp-use/cli evals push evals/`.
 4. **Create an API key.** In the Manufact dashboard, open **API Keys** and click **Create key** ([how to create an API key](https://docs.manufact.com/dashboard/api-keys)).
-5. **Store the key as a repository secret.** In your GitHub repository, go to **Settings > Secrets and variables > Actions** and add it as `MANUFACT_TOKEN`.
+5. **Store the key as a repository secret.** In your GitHub repository, go to **Settings > Secrets and variables > Actions** and add it as `MANUFACT_API_KEY`.
 
 ## Usage
 
@@ -32,7 +32,7 @@ jobs:
     steps:
       - uses: mcp-use/evals@v1
         with:
-          token: ${{ secrets.MANUFACT_TOKEN }}
+          api-key: ${{ secrets.MANUFACT_API_KEY }}
           server: e3b0c442-98fc-4c14-9afb-f4c8996fb924
 ```
 
@@ -47,7 +47,7 @@ List suites in `suites`, one per line. Each line is a suite ID, a suite name, or
 ```yaml
       - uses: mcp-use/evals@v1
         with:
-          token: ${{ secrets.MANUFACT_TOKEN }}
+          api-key: ${{ secrets.MANUFACT_API_KEY }}
           server: e3b0c442-98fc-4c14-9afb-f4c8996fb924
           suites: |
             Rome weather
@@ -68,11 +68,11 @@ Push the suite files before running them, so the suites on Manufact Cloud match 
       - name: Push eval suites
         run: npx --yes @mcp-use/cli evals push evals/
         env:
-          MANUFACT_TOKEN: ${{ secrets.MANUFACT_TOKEN }}
+          MANUFACT_TOKEN: ${{ secrets.MANUFACT_API_KEY }}
           MANUFACT_SERVER: e3b0c442-98fc-4c14-9afb-f4c8996fb924
       - uses: mcp-use/evals@v1
         with:
-          token: ${{ secrets.MANUFACT_TOKEN }}
+          api-key: ${{ secrets.MANUFACT_API_KEY }}
           server: e3b0c442-98fc-4c14-9afb-f4c8996fb924
           suites: evals/
 ```
@@ -95,7 +95,7 @@ jobs:
     steps:
       - uses: mcp-use/evals@v1
         with:
-          token: ${{ secrets.MANUFACT_TOKEN }}
+          api-key: ${{ secrets.MANUFACT_API_KEY }}
           server: e3b0c442-98fc-4c14-9afb-f4c8996fb924
           profile: ${{ matrix.profile }}
 ```
@@ -109,7 +109,7 @@ jobs:
       - id: evals
         uses: mcp-use/evals@v1
         with:
-          token: ${{ secrets.MANUFACT_TOKEN }}
+          api-key: ${{ secrets.MANUFACT_API_KEY }}
           server: e3b0c442-98fc-4c14-9afb-f4c8996fb924
           fail-on: none
       - if: steps.evals.outputs.passed == 'false'
@@ -129,12 +129,12 @@ https://manufact.com/cloud/<org>/servers/e3b0c442-98fc-4c14-9afb-f4c8996fb924/ov
 
 | Input | Default | Description |
 | --- | --- | --- |
-| `token` | | Required. Manufact API key, scoped to the server's organization. Store it as a secret. See [how to create an API key](https://docs.manufact.com/dashboard/api-keys). |
+| `api-key` | | Required. Manufact API key, scoped to the server's organization. Store it as a secret. See [how to create an API key](https://docs.manufact.com/dashboard/api-keys). |
 | `server` | | Required. Server ID: the UUID in the server's dashboard URL. See [Find your server ID](#find-your-server-id). |
 | `suites` | every enabled suite | Suites to run, one per line: IDs, names, or paths to suite files or folders. |
 | `profile` | the server's own | ID of a profile of the server's organization to sign in with instead, to run the suites as a different account. Not for native apps or clients running the plugin lifecycle. |
 | `timeout` | `1800` | Seconds to wait for the runs. Runs still going at the timeout keep running on Manufact Cloud, and the step fails. |
-| `fail-on` | `failed` | `failed` fails the job when a suite fails, is cancelled, times out, or can't start. `none` only fails it when the suites can't run at all (for example, a bad token). |
+| `fail-on` | `failed` | `failed` fails the job when a suite fails, is cancelled, times out, or can't start. `none` only fails it when the suites can't run at all (for example, a bad API key). |
 | `comment` | `true` | On pull requests, comment the results. Set `false` to turn it off. |
 | `github-token` | `github.token` | Token used to post the comment. |
 
@@ -158,7 +158,7 @@ While the suites run, the job log shows each suite's dashboard link, then a line
 
 A suite that can't start (Cloud rejects it, or the request keeps failing) doesn't stop the others: the report lists it under "did not start" with the reason, and it counts as failed. If no suite starts, the report still lists each one.
 
-There's one comment per server and `suites` selection. Later runs update it rather than adding a new comment. If the suites can't run at all (for example, the token is wrong or a suite name doesn't match), the comment shows the error instead.
+There's one comment per server and `suites` selection. Later runs update it rather than adding a new comment. If the suites can't run at all (for example, the API key is wrong or a suite name doesn't match), the comment shows the error instead.
 
 Commenting needs the job to have `pull-requests: write`. Without it, the action logs a warning and carries on; the eval result is unaffected. Pull requests from forks get a read-only token, so there's no comment for those.
 
