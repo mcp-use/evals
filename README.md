@@ -149,15 +149,15 @@ https://manufact.com/cloud/<org>/servers/e3b0c442-98fc-4c14-9afb-f4c8996fb924/ov
 
 ## Pull request comment
 
-On `pull_request` events, the action comments the results on the pull request: a table of suites with their result and score, then a section per suite with a row per client and model showing its score, duration and tool calls. Suites that didn't pass start expanded. Each failed execution lists why it failed (a missing or disallowed tool call, an error, or the judge's main problems), the judge's assessment, a link to its report in the dashboard, and a collapsed conversation: the user's messages, the tool calls and the final answer.
+On `pull_request` events, the action comments on the pull request as soon as the suites start: a short "⏳ Eval suites running" note with a link to the workflow run. When they finish, the results replace it: a table of suites with their result and score, then a section per suite with a row per client and model showing its score, duration and tool calls. Suites that didn't pass start expanded. Each failed execution lists why it failed (a missing or disallowed tool call, an error, or the judge's main problems), the judge's assessment, a link to its report in the dashboard, and a collapsed conversation: the user's messages, the tool calls and the final answer.
 
 While the suites run, the job log shows each suite's dashboard link, then a line as each client and model finishes, with why it failed and a link to its report.
 
 A suite that can't start (Cloud rejects it, or the request keeps failing) doesn't stop the others: the report lists it under "did not start" with the reason, and it counts as failed. If no suite starts, the report still lists each one.
 
-There's one comment per server and `suites` selection. Later runs update it rather than adding a new comment. If the suites can't run at all (for example, the API key is wrong or a suite ID doesn't exist), the comment shows the error instead.
+There's one comment per server and `suites` selection. Later runs update it, first to the running note and then to their results, rather than adding a new comment. If the job is cancelled, the note says so. If the suites can't run at all (for example, the API key is wrong or a suite ID doesn't exist), the comment shows the error instead.
 
-Commenting needs the job to have `pull-requests: write`. Without it, the action logs a warning and carries on; the eval result is unaffected. Pull requests from forks get a read-only token, so there's no comment for those.
+Commenting needs the job to have `pull-requests: write`. Without it, the action logs one warning and carries on; the eval result is unaffected. Pull requests from forks get a read-only token, so there's no comment for those.
 
 The full report also goes to the job log, and the same summary is added to the job summary page.
 
